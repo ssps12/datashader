@@ -81,12 +81,64 @@ jobs:
 
     # test using python 3.7
     - <<: *default
+      arch: arm64
+      env: PYTHON_VERSION=3.7
+      before_install:
+        # Installing python3.7 as by default travis don't have python3.7
+        - sudo add-apt-repository "deb http://ports.ubuntu.com/ubuntu-ports/  eoan main universe"
+        - sudo apt-get update
+        #- sudo apt-get install python3.7
+        #- sudo apt-get install python3-pip
+        # install doit/pyctdev and archiconda...
+        #- sudo python3.7 -m pip install pyctdev
+        - sudo pip install pyctdev
+        - wget -q "https://github.com/conda-forge/miniforge/releases/download/4.8.2-1/Miniforge3-4.8.2-1-Linux-aarch64.sh" -O miniconda.sh
+        - chmod +x miniconda.sh
+        - ./miniconda.sh -b -p $HOME/miniconda
+        - export PATH="$HOME/miniconda/bin:$PATH" && hash -r
+        # Creating link to use conda for sudo user as arm64 requires root permisson to trigger/execute test
+        # We will execute all tests with sudo
+        - sudo ln -s $HOME/miniconda/bin/conda /usr/bin/
+        - conda config --set always_yes True
+        - doit ecosystem_setup
+      install:
+        # Creating conda environmet and installing required packages as doit failing to resolve dependency for arm64
+        - conda create -n test-environment python=$PYTHON_VERSION
+        - source activate test-environment
+        - python3.7 -m pip install pyctdev
+        - conda install -c anaconda nbsmoke flake8 pytest xarray
+        - conda install -c conda-forge dask datashape scipy pytest-benchmark
+        - conda install -c programfan scikit-image
+        - conda install -c numba llvmlite
+        #- python3.7 -m pip install fastparquet
+        - python3.7 setup.py install
+        #- conda install datashader
+        #- conda install -c numba -c pyviz datashader
+        # Install spatialpandas here because it's python 3 only and requires
+        # conda-forge for some dependencies
+        - if [[ "$PYTHON_VERSION" != "2.7" ]]; then
+          conda install -c pyviz/label/dev -c conda-forge -c numba numba matplotlib=3.2.1 matplotlib-base=3.2.1 spatialpandas --no-deps;
+          fi
+        # Install rasterio using pip to avoid conda solver errors
+        - cp /home/travis/miniconda/envs/test-environment/lib/python3.7/site-packages/llvmlite/binding/libllvmlite.so /home/travis/miniconda/envs/test-environment/lib/python3.7/site-packages/llvmlite-0.31.0-py3.7.egg/llvmlite/binding/
+        - sudo apt-get install libblas-dev liblapack-dev libatlas-base-dev gfortran libogdi4.1 libgdal20 libogdi-dev libgdal-dev g++
+        - sudo apt-get install llvm-8
+        - export LLVM_CONFIG="/usr/bin/llvm-config-8"
+        - python3.7 -m pip install fastparquet
+        - python3.7 -m pip install rasterio
+        #- travis_wait mvn install
+        - doit env_capture
+      script:
+        - travis_wait 30 mvn install doit test_all
+        - export NUMBA_DISABLE_JIT=1; doit test_unit_nojit
+
+    # test using python 3.7
+    - <<: *default
       env: PYTHON_VERSION=3.7
       script:
         - doit test_all
         - export NUMBA_DISABLE_JIT=1; doit test_unit_nojit
-
-
+        
     ########## DOCS ##########
 
     - &doc_build
